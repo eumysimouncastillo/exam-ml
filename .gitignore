@@ -1,0 +1,21 @@
+# Virtual environment — large folder, never commit
+venv/
+
+# Trained model files — binary files, retrained on server
+models/*.pkl
+models/hmm/*.pkl
+
+# Python cache — auto-generated, not needed
+__pycache__/
+*.pyc
+*.pyo
+
+# Secrets — NEVER commit this
+.env
+
+# Windows system files
+Thumbs.db
+desktop.ini
+
+# VS Code settings
+.vscode/
