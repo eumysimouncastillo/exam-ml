@@ -19,3 +19,4 @@ desktop.ini
 
 # VS Code settings
 .vscode/
+deploy-remote.ps1
