@@ -12,16 +12,28 @@ from models_ml import (
     train_oc_svm, score_oc_svm,
     score_hmm
 )
+from cpi import apply_cpi_to_results
 from constants import MODELS_DIR, ISO_TAB_PATH
 
 app = Flask(__name__)
+
 
 @app.route('/health', methods=['GET'])
 def health():
     return {'status': 'ok'}, 200
 
+
 @app.route('/process-exam', methods=['POST'])
 def process_exam():
+    """
+    Called by your Node.js or PHP backend when an exam ends.
+    Expected JSON body:
+    {
+        "session_id": "S001",
+        "exam_start": "2025-06-01T09:00:00Z",
+        "exam_end":   "2025-06-01T11:00:00Z"
+    }
+    """
     try:
         data = request.get_json()
         if not data or 'session_id' not in data:
@@ -31,21 +43,30 @@ def process_exam():
         exam_start = datetime(2025, 6, 1, 9,  0, 0, tzinfo=timezone.utc)
         exam_end   = datetime(2025, 6, 1, 11, 0, 0, tzinfo=timezone.utc)
         if 'exam_start' in data:
-            exam_start = datetime.fromisoformat(data['exam_start'].replace('Z','+00:00'))
+            exam_start = datetime.fromisoformat(data['exam_start'].replace('Z', '+00:00'))
         if 'exam_end' in data:
-            exam_end = datetime.fromisoformat(data['exam_end'].replace('Z','+00:00'))
+            exam_end = datetime.fromisoformat(data['exam_end'].replace('Z', '+00:00'))
 
         print(f'\n=== Processing session: {session_id} ===')
 
-        raw_df      = get_logs_for_session(session_id)
-        clean_df    = clean_logs(raw_df)
-        valid_df    = validate_logs(clean_df, exam_start, exam_end)
+        # Step 1: Load raw logs
+        raw_df = get_logs_for_session(session_id)
+        print(f'Loaded {len(raw_df)} raw rows')
+
+        # Step 2: Clean
+        clean_df = clean_logs(raw_df)
+
+        # Step 3: Validate
+        valid_df = validate_logs(clean_df, exam_start, exam_end)
+
+        # Step 4: Extract features
         features_df = extract_all_features(valid_df)
 
-        # Load saved models (must run train_models.py first)
+        # Step 5: Load saved models (must run train_models.py first)
         if not os.path.exists(ISO_TAB_PATH):
             return {'error': 'Models not found. Run train_models.py first.'}, 500
 
+        # Step 6: Normalize and score all algorithms
         norm_df   = normalize_features(features_df.copy(), is_training=False)
         scored_df = score_isolation_forest_tab(norm_df)
         scored_df = score_isolation_forest_rt(scored_df)
@@ -53,34 +74,47 @@ def process_exam():
         scored_df['_iki_sequence'] = features_df['_iki_sequence'].values
         scored_df = score_hmm(scored_df)
 
+        # Step 7: Compute CPI for each student
+        # CPI replaces the old OR-logic for is_flagged.
+        # is_flagged is now True only when CPI >= 50% (Likely or Highly Likely).
+        scored_df = apply_cpi_to_results(scored_df)
+
+        # Step 8: Build results list
         results = []
         for _, row in scored_df.iterrows():
-            flagged = bool(
-                row.get('iso_tab_flagged', False) or
-                row.get('rt_flagged',      False) or
-                row.get('svm_flagged',     False) or
-                row.get('hmm_flagged',     False)
-            )
             results.append({
-                'student_id':     row['student_id'],
-                'flagged':        flagged,
-                'iso_tab_flagged':bool(row.get('iso_tab_flagged', False)),
-                'rt_flagged':     bool(row.get('rt_flagged',      False)),
-                'svm_flagged':    bool(row.get('svm_flagged',     False)),
-                'hmm_flagged':    bool(row.get('hmm_flagged',     False)),
-                'iso_tab_score':  round(float(row.get('iso_tab_score', 0)), 4),
-                'rt_score':       round(float(row.get('rt_score',      0)), 4),
-                'svm_score':      round(float(row.get('svm_score',     0)), 4),
-                'hmm_score':      round(float(row.get('hmm_score',     0)), 4)
+                'student_id':      row['student_id'],
+                # CPI-based flag and score
+                'is_flagged':      bool(row['is_flagged']),
+                'cpi_score':       float(row['cpi_score']),
+                'cpi_label':       str(row['cpi_label']),
+                # Per-algorithm flags (kept for transparency)
+                'iso_tab_flagged': bool(row.get('iso_tab_flagged', False)),
+                'rt_flagged':      bool(row.get('rt_flagged',      False)),
+                'svm_flagged':     bool(row.get('svm_flagged',     False)),
+                'hmm_flagged':     bool(row.get('hmm_flagged',     False)),
+                # Raw scores
+                'iso_tab_score':   round(float(row.get('iso_tab_score', 0)), 4),
+                'rt_score':        round(float(row.get('rt_score',      0)), 4),
+                'svm_score':       round(float(row.get('svm_score',     0)), 4),
+                'hmm_score':       round(float(row.get('hmm_score',     0)), 4)
             })
 
+        # Step 9: Save to database
         save_results_to_db(session_id, results)
-        return {'session_id': session_id, 'students_processed': len(results),
-                'results': results}, 200
+
+        flagged = [r for r in results if r['is_flagged']]
+        return {
+            'session_id':        session_id,
+            'students_processed': len(results),
+            'students_flagged':  len(flagged),
+            'results':           results
+        }, 200
 
     except Exception as e:
         print('[App] ERROR:', traceback.format_exc())
         return {'error': str(e)}, 500
+
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5001, debug=False)

@@ -1,0 +1,14 @@
+### Health check
+GET http://127.0.0.1:5001/health
+
+###
+
+### Process mock exam
+POST http://127.0.0.1:5001/process-exam
+Content-Type: application/json
+
+{
+  "session_id": "S001",
+  "exam_start": "2025-06-01T09:00:00Z",
+  "exam_end":   "2025-06-01T11:00:00Z"
+}
