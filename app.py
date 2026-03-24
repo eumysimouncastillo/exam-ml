@@ -26,13 +26,21 @@ def health():
 @app.route('/process-exam', methods=['POST'])
 def process_exam():
     """
-    Called by your Node.js or PHP backend when an exam ends.
+    Called by your Laravel backend when an exam ends.
     Expected JSON body:
     {
-        "session_id": "S001",
-        "exam_start": "2025-06-01T09:00:00Z",
-        "exam_end":   "2025-06-01T11:00:00Z"
+        "session_id": "1",
+        "exam_start": "2026-03-23T03:35:02Z",
+        "exam_end":   "2026-03-23T03:43:09Z"
     }
+
+    IMPORTANT: Always pass exam_start and exam_end in UTC (append Z).
+    MySQL stores TIMESTAMP columns in UTC. phpMyAdmin displays them in
+    Philippine time (UTC+8), so subtract 8 hours from what you see there.
+    Example: phpMyAdmin shows 11:35:02 → pass 03:35:02Z in test.http.
+
+    When Laravel triggers this automatically, pass exams.start_time and
+    exams.end_time converted to UTC ISO 8601 format.
     """
     try:
         data = request.get_json()
@@ -40,14 +48,19 @@ def process_exam():
             return {'error': 'session_id is required'}, 400
 
         session_id = data['session_id']
-        exam_start = datetime(2025, 6, 1, 9,  0, 0, tzinfo=timezone.utc)
-        exam_end   = datetime(2025, 6, 1, 11, 0, 0, tzinfo=timezone.utc)
+
+        # Default fallback window (wide, UTC-aware)
+        exam_start = datetime(2000, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        exam_end   = datetime(2100, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+
         if 'exam_start' in data:
-            exam_start = datetime.fromisoformat(data['exam_start'].replace('Z', '+00:00'))
+            exam_start = _parse_utc(data['exam_start'])
+
         if 'exam_end' in data:
-            exam_end = datetime.fromisoformat(data['exam_end'].replace('Z', '+00:00'))
+            exam_end = _parse_utc(data['exam_end'])
 
         print(f'\n=== Processing session: {session_id} ===')
+        print(f'[App] Window: {exam_start} → {exam_end}')
 
         # Step 1: Load raw logs
         raw_df = get_logs_for_session(session_id)
@@ -61,6 +74,16 @@ def process_exam():
 
         # Step 4: Extract features
         features_df = extract_all_features(valid_df)
+
+        # Guard: if no students survived validation/feature extraction, return early
+        if features_df is None or features_df.empty:
+            print('[App] No students to process after feature extraction.')
+            return {
+                'session_id':         session_id,
+                'students_processed': 0,
+                'students_flagged':   0,
+                'results':            []
+            }, 200
 
         # Step 5: Load saved models (must run train_models.py first)
         if not os.path.exists(ISO_TAB_PATH):
@@ -105,15 +128,32 @@ def process_exam():
 
         flagged = [r for r in results if r['is_flagged']]
         return {
-            'session_id':        session_id,
+            'session_id':         session_id,
             'students_processed': len(results),
-            'students_flagged':  len(flagged),
-            'results':           results
+            'students_flagged':   len(flagged),
+            'results':            results
         }, 200
 
     except Exception as e:
         print('[App] ERROR:', traceback.format_exc())
         return {'error': str(e)}, 500
+
+
+def _parse_utc(value: str) -> datetime:
+    """
+    Parses a datetime string and always returns a UTC-aware datetime.
+    Accepts:
+      - "2026-03-23T03:35:02Z"       → treated as UTC
+      - "2026-03-23T03:35:02+00:00"  → treated as UTC
+      - "2026-03-23 03:35:02"        → assumed UTC (no tz marker)
+    """
+    value = value.strip().replace(' ', 'T')
+    if value.endswith('Z'):
+        value = value[:-1] + '+00:00'
+    dt = datetime.fromisoformat(value)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 if __name__ == '__main__':

@@ -9,7 +9,7 @@ import random
 
 load_dotenv()
 
-USE_MOCK_DATA = True   # Set to False when real MySQL tables are ready
+USE_MOCK_DATA = False   # Set to False when real MySQL tables are ready
 
 DB_CONFIG = {
     'host':     os.getenv('DB_HOST',     'localhost'),
@@ -96,38 +96,43 @@ def _load_from_mysql(session_id):
     """
     import mysql.connector
     submission_id = int(session_id)
-    conn = mysql.connector.connect(**DB_CONFIG)
+    conn = mysql.connector.connect(**DB_CONFIG, time_zone='+00:00')
 
-    # Get submission info (student_id, exam_id, start/end times)
-    sub_df = pd.read_sql(
+    # Use dictionary=True cursor for all queries to avoid pd.read_sql warnings
+    # and to correctly handle reserved words like `keys`
+    cursor = conn.cursor(dictionary=True)
+
+    # Get submission info (student_id, exam_id)
+    cursor.execute(
         'SELECT id, exam_id, student_id FROM exam_submissions WHERE id = %s',
-        conn, params=(submission_id,)
+        (submission_id,)
     )
-    if sub_df.empty:
+    sub_row = cursor.fetchone()
+    if not sub_row:
+        cursor.close()
         conn.close()
         print(f'[DB] No submission found for id={submission_id}')
         return pd.DataFrame()
 
-    student_id = int(sub_df.iloc[0]['student_id'])
-    exam_id    = int(sub_df.iloc[0]['exam_id'])
+    student_id = int(sub_row['student_id'])
+    exam_id    = int(sub_row['exam_id'])
 
     # Get student email from users table
-    user_df = pd.read_sql(
-        'SELECT email FROM users WHERE id = %s', conn, params=(student_id,)
-    )
-    email = user_df.iloc[0]['email'] if not user_df.empty else f'user{student_id}@school.edu'
+    cursor.execute('SELECT email FROM users WHERE id = %s', (student_id,))
+    user_row = cursor.fetchone()
+    email = user_row['email'] if user_row else f'user{student_id}@school.edu'
 
     logs = []
 
     # ── 1. Tab Switch Logs ────────────────────────────────────────────────────
     # is_return_event=0 → student left tab (tab_switch)
     # is_return_event=1 → student returned (tab_return)
-    tab_df = pd.read_sql(
+    cursor.execute(
         'SELECT is_return_event, hidden_duration_ms, occurred_at '
-        'FROM tab_switch_logs WHERE submission_id=%s ORDER BY occurred_at ASC',
-        conn, params=(submission_id,)
+        'FROM tab_switch_logs WHERE submission_id = %s ORDER BY occurred_at ASC',
+        (submission_id,)
     )
-    for _, row in tab_df.iterrows():
+    for row in cursor.fetchall():
         action = 'tab_return' if row['is_return_event'] else 'tab_switch'
         logs.append({
             'session_id':  str(submission_id),
@@ -141,12 +146,13 @@ def _load_from_mysql(session_id):
 
     # ── 2. Keyboard Shortcut Logs ─────────────────────────────────────────────
     # Map keys column to action_type
-    ks_df = pd.read_sql(
-        'SELECT keys, is_paste, question_id, occurred_at '
-        'FROM keyboard_shortcut_logs WHERE submission_id=%s ORDER BY occurred_at ASC',
-        conn, params=(submission_id,)
+    # Backticks around `keys` are handled safely via cursor.execute parameters
+    cursor.execute(
+        'SELECT `keys`, is_paste, question_id, occurred_at '
+        'FROM keyboard_shortcut_logs WHERE submission_id = %s ORDER BY occurred_at ASC',
+        (submission_id,)
     )
-    for _, row in ks_df.iterrows():
+    for row in cursor.fetchall():
         keys = str(row['keys']).lower().strip()
         if 'ctrl+c' in keys or keys == 'copy':
             action = 'copy'
@@ -169,19 +175,19 @@ def _load_from_mysql(session_id):
     # ── 3. Keystroke Dynamics Logs ────────────────────────────────────────────
     # flight_times_ms is the IKI sequence — expand into individual keystroke rows
     # Only use is_baseline=0 rows for exam scoring
-    kd_df = pd.read_sql(
+    cursor.execute(
         'SELECT question_id, flight_times_ms, occurred_at '
         'FROM keystroke_dynamics_logs '
-        'WHERE submission_id=%s AND is_baseline=0 ORDER BY occurred_at ASC',
-        conn, params=(submission_id,)
+        'WHERE submission_id = %s AND is_baseline = 0 ORDER BY occurred_at ASC',
+        (submission_id,)
     )
-    for _, row in kd_df.iterrows():
+    for row in cursor.fetchall():
         try:
             flight_times = json.loads(row['flight_times_ms']) if row['flight_times_ms'] else []
         except (json.JSONDecodeError, TypeError):
             flight_times = []
-        base_time    = pd.to_datetime(row['occurred_at'])
-        cumulative   = 0
+        base_time  = pd.to_datetime(row['occurred_at'])
+        cumulative = 0
         for ft in flight_times:
             cumulative += float(ft)
             t = base_time + pd.Timedelta(milliseconds=cumulative)
@@ -198,17 +204,17 @@ def _load_from_mysql(session_id):
     # ── 4. Response Time Logs ─────────────────────────────────────────────────
     # Reconstruct question_open + question_submit pairs from response_time_ms
     # occurred_at = submit time; open time = occurred_at - response_time_ms
-    rt_df = pd.read_sql(
+    cursor.execute(
         'SELECT question_id, response_time_ms, occurred_at '
         'FROM response_time_logs '
-        'WHERE submission_id=%s AND is_baseline=0 ORDER BY occurred_at ASC',
-        conn, params=(submission_id,)
+        'WHERE submission_id = %s AND is_baseline = 0 ORDER BY occurred_at ASC',
+        (submission_id,)
     )
-    for _, row in rt_df.iterrows():
-        submit_time  = pd.to_datetime(row['occurred_at'])
-        rt_seconds   = float(row['response_time_ms']) / 1000.0
-        open_time    = submit_time - pd.Timedelta(seconds=rt_seconds)
-        qid          = str(row['question_id'])
+    for row in cursor.fetchall():
+        submit_time = pd.to_datetime(row['occurred_at'])
+        rt_seconds  = float(row['response_time_ms']) / 1000.0
+        open_time   = submit_time - pd.Timedelta(seconds=rt_seconds)
+        qid         = str(row['question_id'])
         logs.append({
             'session_id':  str(submission_id),
             'student_id':  str(student_id),
@@ -228,6 +234,7 @@ def _load_from_mysql(session_id):
             'timestamp':   submit_time
         })
 
+    cursor.close()
     conn.close()
 
     if not logs:
@@ -235,7 +242,8 @@ def _load_from_mysql(session_id):
         return pd.DataFrame()
 
     df = pd.DataFrame(logs)
-    df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True, errors='coerce')
+    # Keep timestamps timezone-naive to match exam_start/exam_end from app.py
+    df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce', utc=True)
     df = df.sort_values('timestamp').reset_index(drop=True)
     print(f'[DB] Loaded {len(df)} merged rows for submission_id={submission_id}')
     return df
@@ -243,8 +251,8 @@ def _load_from_mysql(session_id):
 
 def _generate_mock_logs(session_id):
     """Generates fake logs mirroring the unified structure the pipeline expects."""
-    random.seed(42)
-    np.random.seed(42)
+    random.seed(45)
+    np.random.seed(45)
     exam_start = datetime(2025, 6, 1, 9, 0, 0, tzinfo=timezone.utc)
     logs = []
     students = [
