@@ -96,7 +96,7 @@ def _load_from_mysql(session_id):
     """
     import mysql.connector
     submission_id = int(session_id)
-    conn = mysql.connector.connect(**DB_CONFIG, time_zone='+00:00')
+    conn = mysql.connector.connect(**DB_CONFIG)
 
     # Use dictionary=True cursor for all queries to avoid pd.read_sql warnings
     # and to correctly handle reserved words like `keys`
@@ -243,7 +243,8 @@ def _load_from_mysql(session_id):
 
     df = pd.DataFrame(logs)
     # Keep timestamps timezone-naive to match exam_start/exam_end from app.py
-    df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce', utc=True)
+    df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+    df['timestamp'] = df['timestamp'].dt.tz_localize('Asia/Manila').dt.tz_convert('UTC')
     df = df.sort_values('timestamp').reset_index(drop=True)
     print(f'[DB] Loaded {len(df)} merged rows for submission_id={submission_id}')
     return df

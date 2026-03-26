@@ -71,6 +71,13 @@ def process_exam():
 
         # Step 3: Validate
         valid_df = validate_logs(clean_df, exam_start, exam_end)
+        
+        # DEBUG - remove after fixing
+        if valid_df.empty and not clean_df.empty:
+            print(f'[Debug] exam_start: {exam_start}')
+            print(f'[Debug] exam_end: {exam_end}')
+            print(f'[Debug] First 3 timestamps in clean_df:')
+            print(clean_df['timestamp'].head(3).tolist())
 
         # Step 4: Extract features
         features_df = extract_all_features(valid_df)
