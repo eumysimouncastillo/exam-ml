@@ -20,7 +20,7 @@ def main():
 
     # Step 1: Generate synthetic normal training data
     print('Step 1: Generating synthetic training data...')
-    train_df = generate_training_data(n_students=200)
+    train_df = generate_training_data(n_students=1000)
 
     # Step 2: Normalize features
     print()
