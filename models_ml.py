@@ -88,7 +88,7 @@ def train_oc_svm(features_df):
     nu=0.05: up to 5% of training samples may be outside the boundary.
     """
     X = features_df[OC_SVM_FEATURES].values
-    model = OneClassSVM(kernel='rbf', nu=0.05, gamma=1.0)
+    model = OneClassSVM(kernel='rbf', nu=0.01, gamma=1.0)
     model.fit(X)
     os.makedirs(MODELS_DIR, exist_ok=True)
     joblib.dump(model, OC_SVM_PATH)
