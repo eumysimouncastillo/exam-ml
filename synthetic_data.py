@@ -39,15 +39,19 @@ def generate_training_data(n_students=200, seed=42):
         rows.append({
             'student_id':        f'TRAIN{i:04d}',
             # Tab features — normal: 0-3 switches, duration <= 3 seconds
-            'tab_switch_count':  random.randint(0, 3),
-            'avg_duration_away': random.uniform(0, 3),
-            'max_duration_away': random.uniform(0, 3),
+            # If tab_switch_count is 0, durations must also be 0
+            # This matches real behavior — no switches means no duration data
+            # Distribute evenly so model learns full 0-3 range as normal
+            'tab_switch_count':  (tab_count := random.choices([0, 1, 2, 3], weights=[40, 30, 20, 10])[0]),
+            'avg_duration_away': random.uniform(0, 3) if tab_count > 0 else 0.0,
+            'max_duration_away': random.uniform(0, 3) if tab_count > 0 else 0.0,
             # Copy/paste — normal: all zero during exam
             # shortcut_count has small realistic range (Ctrl+Z, Ctrl+A, etc.)
             'copy_count':        0,
             'paste_count':       0,
             'cut_count':         0,
-            'shortcut_count':    random.randint(0, 3),
+            # Weighted towards 0 — most students use no shortcuts during exams
+            'shortcut_count':    random.choices([0, 1, 2, 3], weights=[60, 20, 15, 5])[0],
             # Response time — normal: 30-180 seconds per question
             'avg_rt': random.uniform(30, 180),
             'min_rt': random.uniform(10, 30),
@@ -86,13 +90,14 @@ def generate_test_data(n_normal=50, n_suspicious=50, seed=99):
     for i in range(n_normal):
         rows.append({
             'student_id':        f'TEST_N{i:04d}',
-            'tab_switch_count':  random.randint(0, 3),
-            'avg_duration_away': random.uniform(0, 3),
-            'max_duration_away': random.uniform(0, 3),
+            'tab_switch_count':  (tab_count := random.randint(0, 3)),
+            'avg_duration_away': random.uniform(0, 3) if tab_count > 0 else 0.0,
+            'max_duration_away': random.uniform(0, 3) if tab_count > 0 else 0.0,
             'copy_count':        0,
             'paste_count':       0,
             'cut_count':         0,
-            'shortcut_count':    random.randint(0, 3),
+            # Weighted towards 0 — most students use no shortcuts during exams
+            'shortcut_count':    random.choices([0, 1, 2, 3], weights=[60, 20, 15, 5])[0],
             'avg_rt': random.uniform(30, 180),
             'min_rt': random.uniform(10, 30),
             'max_rt': random.uniform(180, 300),
