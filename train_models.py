@@ -42,15 +42,13 @@ def main():
     print('Step 5: Training One-Class SVM (Copy/Paste)...')
     train_oc_svm(norm_df)
 
-    # Step 6: Train HMM for each synthetic student using their IKI sequence
+    # Step 6: HMM — no synthetic training needed.
+    # HMM baselines are trained per-student via the /train-baseline Flask endpoint
+    # when a real student completes the pre-exam typing test.
+    # Synthetic HMM .pkl files in models/hmm/ can be safely deleted.
     print()
-    print('Step 6: Training HMM models for each synthetic student...')
-    hmm_trained = 0
-    for _, row in train_df.iterrows():
-        result = train_student_hmm(row['student_id'], row['_iki_sequence'])
-        if result is not None:
-            hmm_trained += 1
-    print(f'[HMM] Trained {hmm_trained} student models')
+    print('Step 6: HMM skipped — uses real per-student baselines via /train-baseline.')
+
 
     print()
     print('=== All models trained and saved to models/ folder ===')

@@ -10,7 +10,7 @@ from models_ml import (
     train_isolation_forest_tab, score_isolation_forest_tab,
     train_isolation_forest_rt,  score_isolation_forest_rt,
     train_oc_svm, score_oc_svm,
-    score_hmm
+    score_hmm, train_student_hmm
 )
 from cpi import apply_cpi_to_results
 from constants import MODELS_DIR, ISO_TAB_PATH
@@ -21,6 +21,51 @@ app = Flask(__name__)
 @app.route('/health', methods=['GET'])
 def health():
     return {'status': 'ok'}, 200
+
+@app.route('/train-baseline', methods=['POST'])
+def train_baseline():
+    """
+    Called by Laravel after a student completes the typing test.
+    Trains a personal HMM for the student and saves it as a .pkl file.
+
+    Expected JSON body:
+    {
+        "student_id":      "42",
+        "flight_times_ms": [112.5, 98.0, 145.2, ...]
+    }
+
+    Minimum 50 values required. Returns 400 if below threshold.
+    """
+    try:
+        data = request.get_json()
+        if not data or 'student_id' not in data or 'flight_times_ms' not in data:
+            return {'error': 'student_id and flight_times_ms are required'}, 400
+
+        student_id   = str(data['student_id'])
+        flight_times = data['flight_times_ms']
+
+        if len(flight_times) < 50:
+            return {
+                'error': f'Insufficient keystrokes: {len(flight_times)} provided, 50 required.'
+            }, 400
+
+        print(f'[Baseline] Training HMM for student {student_id} ({len(flight_times)} IKIs)')
+
+        result = train_student_hmm(student_id, flight_times)
+
+        if result is None:
+            return {'error': 'HMM training failed — insufficient data.'}, 400
+
+        print(f'[Baseline] HMM trained and saved for student {student_id}')
+        return {
+            'student_id':       student_id,
+            'iki_count':        len(flight_times),
+            'status':           'trained',
+        }, 200
+
+    except Exception as e:
+        print('[Baseline] ERROR:', traceback.format_exc())
+        return {'error': str(e)}, 500
 
 
 @app.route('/process-exam', methods=['POST'])
