@@ -104,7 +104,8 @@ def generate_test_data(n_normal=50, n_suspicious=50, seed=99):
             'std_rt': random.uniform(10, 40),
             'mean_iki': random.uniform(150, 250),
             'std_iki':  random.uniform(20, 60),
-            '_iki_sequence': list(np.random.normal(200, 40, 100).clip(30, 5000))
+            '_iki_sequence':          list(np.random.normal(200, 40, 100).clip(30, 5000)),
+            '_baseline_iki_sequence': list(np.random.normal(200, 40, 100).clip(30, 5000))
         })
         labels.append(0)
 
@@ -130,7 +131,8 @@ def generate_test_data(n_normal=50, n_suspicious=50, seed=99):
             'std_rt': random.uniform(1, 5),
             'mean_iki': random.uniform(50, 100),
             'std_iki':  random.uniform(80, 150),
-            '_iki_sequence': list(np.random.normal(75, 100, 100).clip(30, 5000))
+            '_iki_sequence':          list(np.random.normal(75, 100, 100).clip(30, 5000)),
+            '_baseline_iki_sequence': list(np.random.normal(200, 40, 100).clip(30, 5000))
         })
         labels.append(1)
 
@@ -154,7 +156,8 @@ def generate_test_data(n_normal=50, n_suspicious=50, seed=99):
             'std_rt': random.uniform(4, 10),
             'mean_iki': random.uniform(100, 150),
             'std_iki':  random.uniform(60, 90),
-            '_iki_sequence': list(np.random.normal(120, 80, 100).clip(30, 5000))
+            '_iki_sequence':          list(np.random.normal(120, 80, 100).clip(30, 5000)),
+            '_baseline_iki_sequence': list(np.random.normal(200, 40, 100).clip(30, 5000))
         })
         labels.append(1)
 
