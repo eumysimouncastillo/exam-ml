@@ -174,8 +174,6 @@ def _load_from_mysql(session_id):
         })
 
     # ── 3. Keystroke Dynamics Logs ────────────────────────────────────────────
-    # flight_times_ms is the IKI sequence — expand into individual keystroke rows
-    # Only use is_baseline=0 rows for exam scoring
     cursor.execute(
         'SELECT question_id, flight_times_ms, occurred_at '
         'FROM keystroke_dynamics_logs '
@@ -187,11 +185,20 @@ def _load_from_mysql(session_id):
             flight_times = json.loads(row['flight_times_ms']) if row['flight_times_ms'] else []
         except (json.JSONDecodeError, TypeError):
             flight_times = []
-        base_time  = pd.to_datetime(row['occurred_at'])
+
+        if not flight_times:
+            continue
+
+        # occurred_at is when the question was submitted (last keystroke moment).
+        # Reconstruct going BACKWARDS so all keystrokes fall within the exam window.
+        occurred_at = pd.to_datetime(row['occurred_at'])
+        total_ms    = sum(float(ft) for ft in flight_times)
+        start_time  = occurred_at - pd.Timedelta(milliseconds=total_ms)
+
         cumulative = 0
         for ft in flight_times:
+            t = start_time + pd.Timedelta(milliseconds=cumulative)
             cumulative += float(ft)
-            t = base_time + pd.Timedelta(milliseconds=cumulative)
             logs.append({
                 'session_id':  str(submission_id),
                 'student_id':  str(student_id),

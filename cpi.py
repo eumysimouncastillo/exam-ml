@@ -53,12 +53,14 @@ def _sigmoid_norm(score):
 
 def _hmm_norm(drop):
     """
-    Converts an HMM drop value (higher = more suspicious) to 0-1.
-    Clips to a max of 50 (empirically reasonable upper bound for log-likelihood drop).
-    drop=0    → 0.0 (no change from baseline, normal)
-    drop=50+  → 1.0 (maximally different from baseline, suspicious)
+    Converts the HMM combined drop score to 0-1.
+    drop = max(per_step_llr_drop, ratio_shift)
+    ratio_shift = (max/min of mean IKIs) - 1.0
+    drop=0   → 0.0  (exam rhythm matches baseline)
+    drop=2+  → 1.0  (maximally different — typing twice as fast/slow)
+    Threshold for hmm_flagged is 0.8 (set in models_ml.py).
     """
-    return float(min(max(drop, 0.0), 50.0) / 50.0)
+    return float(min(max(drop, 0.0), 2.0) / 2.0)
 
 
 def compute_cpi(row):
