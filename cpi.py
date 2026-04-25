@@ -7,9 +7,9 @@
 # CPI value per student along with a human-readable label.
 #
 # WEIGHT RATIONALE (risk-based weighting):
-#   SVM  0.35 — copy/paste is a direct, deliberate action (strongest signal)
-#   TAB  0.25 — tab switching is behavioral but has innocent explanations
-#   RT   0.25 — response time is meaningful but ambiguous (fast ≠ cheating)
+#   SVM  0.40 — copy/paste is a direct, deliberate action (strongest signal)
+#   TAB  0.30 — tab switching is behavioral but has innocent explanations
+#   RT   0.15 — response time is meaningful but ambiguous (fast ≠ cheating)
 #   HMM  0.15 — requires baseline data; lowest weight due to data dependency
 #   Ref: Corrigan-Gibbs et al. (2015), Chandola et al. (2009)
 #
@@ -20,12 +20,15 @@
 #   Highly Likely 75-100% Q4 — top quarter (flagged)
 #   Ref: Chandola et al. (2009), Likert (1932)
 #
-# NORMALIZATION METHOD (sigmoid inversion):
+# NORMALIZATION METHOD (sigmoid inversion + boundary rescaling):
 #   Isolation Forest and OC-SVM output decision_function scores where
-#   more negative = more anomalous. Sigmoid inversion maps these to 0-1
-#   where 1 = maximally suspicious: norm = 1 / (1 + exp(score))
-#   HMM outputs a drop value (higher = more suspicious), clipped to 0-50
-#   and divided by 50 to give 0-1.
+#   more negative = more anomalous. Sigmoid inversion maps these to 0-1,
+#   then rescaled so that the decision boundary (score=0) maps to 0.0
+#   instead of 0.5. This ensures a student with no anomalous behavior
+#   contributes 0 to the CPI rather than 0.5 per algorithm.
+#   Formula: norm = max(0, (sigmoid(score) - 0.5) * 2.0)
+#   HMM outputs a drop value (higher = more suspicious), clipped to 0-2
+#   and divided by 2 to give 0-1.
 # =============================================================================
 
 import numpy as np
@@ -43,12 +46,23 @@ from constants import (
 def _sigmoid_norm(score):
     """
     Converts a decision_function score (negative = anomalous) to 0-1.
-    Uses sigmoid inversion: norm = 1 / (1 + exp(score))
-    - A very negative score (e.g. -2.0) → close to 1.0 (suspicious)
-    - A positive score  (e.g. +1.0) → close to 0.27 (normal)
-    - Score of 0.0 → exactly 0.5 (boundary)
+
+    Step 1 — Sigmoid inversion: sigmoid = 1 / (1 + exp(score))
+      - Very negative score (e.g. -3.0) → close to 1.0 (suspicious)
+      - Score of 0.0 (decision boundary)  → exactly 0.5
+      - Positive score  (e.g. +1.0)       → close to 0.27 (normal)
+
+    Step 2 — Boundary rescaling: norm = max(0, (sigmoid - 0.5) * 2.0)
+      - Shifts and stretches so that the decision boundary (sigmoid=0.5)
+        maps to 0.0 instead of 0.5. A student with no anomalous behavior
+        (score >= 0) contributes 0 to the CPI rather than 0.5.
+      - Score of 0.0 (boundary) → 0.0  (no contribution)
+      - Score of -1.0           → 0.46 (moderate contribution)
+      - Score of -3.0           → 0.90 (high contribution)
+      - Positive scores         → 0.0  (clamped — normal behavior)
     """
-    return float(1.0 / (1.0 + np.exp(score)))
+    sigmoid = 1.0 / (1.0 + np.exp(score))
+    return float(max(0.0, (sigmoid - 0.5) * 2.0))
 
 
 def _hmm_norm(drop):
