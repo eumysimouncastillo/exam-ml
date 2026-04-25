@@ -1,4 +1,4 @@
-# Virtual environment — large folder, never commit
+# Virtual environment
 venv/
 
 # Trained model files — binary files, retrained on server
@@ -10,7 +10,7 @@ __pycache__/
 *.pyc
 *.pyo
 
-# Secrets — NEVER commit this
+# Environment variables file 
 .env
 
 # Windows system files

@@ -47,17 +47,17 @@ SCALE_FEATURES = [
 # CPI — Cheating Probability Index
 # =============================================================================
 # WEIGHTS (risk-based, sum = 1.0):
-#   SVM  0.35 — copy/paste is direct and deliberate
+#   SVM  0.40 — copy/paste is direct and deliberate
 #               Ref: Corrigan-Gibbs et al. (2015), Alessio et al. (2017)
-#   TAB  0.25 — behavioral but has innocent explanations
+#   TAB  0.30 — behavioral but has innocent explanations
 #               Ref: Cluskey et al. (2011)
-#   RT   0.25 — meaningful but ambiguous
+#   RT   0.15 — meaningful but ambiguous
 #               Ref: Wollack and Fremer (2013) Handbook of Test Security
 #   HMM  0.15 — requires baseline data, weighted lower
 #               Ref: Shepherd et al. (2018) IEEE
-CPI_WEIGHT_SVM     = 0.35
-CPI_WEIGHT_ISO_TAB = 0.25
-CPI_WEIGHT_ISO_RT  = 0.25
+CPI_WEIGHT_SVM     = 0.40
+CPI_WEIGHT_ISO_TAB = 0.30
+CPI_WEIGHT_ISO_RT  = 0.15
 CPI_WEIGHT_HMM     = 0.15
 
 # THRESHOLDS (uniform quartile division):
