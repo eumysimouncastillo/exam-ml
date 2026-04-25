@@ -122,7 +122,13 @@ def compute_cpi(row):
     else:
         cpi_label  = 'Unlikely'
         is_flagged = False
-
+    # === INSERT DEBUG PRINT HERE ===
+    print(f"--- DEBUG CPI CALCULATION ---")
+    print(f"Weights: SVM={CPI_WEIGHT_SVM}, TAB={CPI_WEIGHT_ISO_TAB}, RT={CPI_WEIGHT_ISO_RT}, HMM={CPI_WEIGHT_HMM}")
+    print(f"Norms:   SVM={svm_norm:.2f}, TAB={iso_tab_norm:.2f}, RT={rt_norm:.2f}, HMM={hmm_norm:.2f}")
+    print(f"Final Score: {cpi_score}%")
+    print(f"-----------------------------")
+    
     return {
         'cpi_raw':     cpi_raw,
         'cpi_score':   cpi_score,
