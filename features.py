@@ -30,6 +30,10 @@ def extract_all_features(df):
 def _tab_features(df):
     sw = df[df['action_type'] == 'tab_switch']
     rt = df[df['action_type'] == 'tab_return']
+    
+    # TEMP DEBUG
+    print(f'[TabDebug] switch rows: {len(sw)}, return rows: {len(rt)}')
+    
     if sw.empty:
         return {'tab_switch_count': 0, 'avg_duration_away': 0.0, 'max_duration_away': 0.0}
     durs = []
@@ -37,11 +41,16 @@ def _tab_features(df):
         after = rt[rt['timestamp'] > t]
         if not after.empty:
             durs.append((after.iloc[0]['timestamp'] - t).total_seconds())
-    return {
+    
+    result = {
         'tab_switch_count':  len(sw),
         'avg_duration_away': float(np.mean(durs)) if durs else 0.0,
         'max_duration_away': float(np.max(durs))  if durs else 0.0
     }
+    # TEMP DEBUG
+    print(f'[TabDebug] durs computed: {len(durs)}, features: {result}')
+    return result
+    
 
 
 def _copypaste_features(df):
