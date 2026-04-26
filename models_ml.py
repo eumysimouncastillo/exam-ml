@@ -32,13 +32,16 @@ def train_isolation_forest_tab(features_df):
 
 
 def score_isolation_forest_tab(features_df):
-    """
-    iso_tab_score:   more negative = more anomalous tab behavior
-    iso_tab_flagged: True = anomaly detected
-    """
     model = joblib.load(ISO_TAB_PATH)
     X = features_df[ISO_TAB_FEATURES].values
-    features_df['iso_tab_score']   = model.decision_function(X)
+    
+    # TEMP DEBUG
+    print(f'[IsoTabDebug] Raw input to model: {X}')
+    raw_scores = model.decision_function(X)
+    print(f'[IsoTabDebug] Raw decision_function output: {raw_scores}')
+    print(f'[IsoTabDebug] Predict output: {model.predict(X)}')
+    
+    features_df['iso_tab_score']   = raw_scores
     features_df['iso_tab_flagged'] = model.predict(X) == -1
     return features_df
 
