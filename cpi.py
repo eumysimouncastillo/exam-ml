@@ -78,29 +78,33 @@ def _sigmoid_norm(score):
     return float(max(0.0, (sigmoid - 0.5) * 2.0))
 
 
+def _iso_tab_severity(is_flagged, tab_switch_count, avg_duration_away, max_duration_away):
+    """
+    For Isolation Forest (Tab) only.
+    IF-Tab detects whether behavior is anomalous (binary). Severity is then
+    computed from raw feature exceedances above the normal boundary (0-3).
+    Equal weighting across all three dimensions: frequency, typical duration,
+    worst-case duration.
+    Ceilings: 20 switches, 120s avg, 300s max → severity = 1.0
+    Ref: Liu et al. (2008) — IF decision_function has bounded magnitude;
+    severity grading from raw features preserves detection-scoring separation.
+    """
+    if not is_flagged:
+        return 0.0
+    count_excess = max(0.0, (tab_switch_count  - 3) / 17)
+    avg_excess   = max(0.0, (avg_duration_away - 3) / 117)
+    max_excess   = max(0.0, (max_duration_away - 3) / 297)
+    severity     = (count_excess + avg_excess + max_excess) / 3.0
+    return float(min(1.0, severity))
+
+
 def _iso_norm(score):
     """
-    For Isolation Forest (Tab and RT) only.
-
-    Isolation Forest's decision_function is bounded in a narrow range
-    near the decision threshold regardless of how extreme the anomaly is.
-    This is a documented property of the algorithm (Liu et al., 2008) —
-    scores are normalized by average path length and cluster between
-    roughly -0.5 and 0.5.
-
-    Sigmoid normalization suppresses this signal because a score of -0.07
-    and -0.5 both map to near 0.5 on the sigmoid curve, producing nearly
-    identical CPI contributions despite very different anomaly levels.
-
-    Linear mapping from the effective IF range to [0.0, 1.0]:
-      score =  0.0  → 0.0 (on decision boundary — no contribution)
-      score = -0.07 → 0.14 (mild anomaly)
-      score = -0.25 → 0.50 (moderate anomaly)
-      score = -0.5  → 1.0  (maximum anomaly)
-      Positive scores → 0.0 (clamped — normal behavior)
-
-    Ref: Liu, F.T., Ting, K.M., Zhou, Z.H. (2008). Isolation Forest.
-         IEEE International Conference on Data Mining (ICDM).
+    For Isolation Forest (RT) only.
+    Linear mapping from IF decision_function range [-0.5, 0.0] to [1.0, 0.0].
+    score =  0.0  → 0.0 (boundary, no contribution)
+    score = -0.5  → 1.0 (maximum anomaly)
+    Ref: Liu et al. (2008).
     """
     return float(max(0.0, min(1.0, score / -0.5)))
 
@@ -149,7 +153,12 @@ def compute_cpi(row):
     # IF-Tab and IF-RT use linear mapping (_iso_norm)
     # OC-SVM uses sigmoid inversion + boundary rescaling (_sigmoid_norm)
     # HMM uses ratio-based drop normalization (_hmm_norm)
-    iso_tab_norm = _iso_norm(iso_tab_raw)
+    iso_tab_norm = _iso_tab_severity(
+        row.get('iso_tab_flagged', False),
+        row.get('tab_switch_count', 0.0),
+        row.get('avg_duration_away', 0.0),
+        row.get('max_duration_away', 0.0)
+    )
     rt_norm      = _iso_norm(rt_raw)
     svm_norm     = _sigmoid_norm(svm_raw)
     hmm_norm     = _hmm_norm(hmm_raw)
