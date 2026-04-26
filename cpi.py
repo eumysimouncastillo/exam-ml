@@ -20,15 +20,28 @@
 #   Highly Likely 75-100% Q4 — top quarter (flagged)
 #   Ref: Chandola et al. (2009), Likert (1932)
 #
-# NORMALIZATION METHOD (sigmoid inversion + boundary rescaling):
-#   Isolation Forest and OC-SVM output decision_function scores where
-#   more negative = more anomalous. Sigmoid inversion maps these to 0-1,
-#   then rescaled so that the decision boundary (score=0) maps to 0.0
-#   instead of 0.5. This ensures a student with no anomalous behavior
-#   contributes 0 to the CPI rather than 0.5 per algorithm.
-#   Formula: norm = max(0, (sigmoid(score) - 0.5) * 2.0)
-#   HMM outputs a drop value (higher = more suspicious), clipped to 0-2
-#   and divided by 2 to give 0-1.
+# NORMALIZATION METHOD:
+#   Two separate normalizers are used depending on the algorithm's output
+#   characteristics:
+#
+#   OC-SVM → _sigmoid_norm (sigmoid inversion + boundary rescaling)
+#     OC-SVM's decision_function has unbounded magnitude — a score of -7.6
+#     means far more anomalous than -0.5. Sigmoid inversion maps this to 0-1,
+#     then rescaled so the decision boundary (score=0) maps to exactly 0.0.
+#     Formula: max(0, (sigmoid(score) - 0.5) * 2.0)
+#
+#   Isolation Forest (Tab, RT) → _iso_norm (linear mapping)
+#     Isolation Forest's decision_function is bounded in a narrow range
+#     regardless of how extreme the anomaly is — this is a documented
+#     property of the algorithm (Liu et al., 2008). Sigmoid normalization
+#     suppresses this signal. A linear mapping from the effective IF range
+#     [-0.5, 0.0] to [1.0, 0.0] preserves relative anomaly magnitude and
+#     correctly anchors normal behavior at zero contribution.
+#     Formula: max(0, min(1, score / -0.5))
+#
+#   HMM → _hmm_norm (ratio-based drop, clipped to [0, 2])
+#     HMM outputs a drop value (higher = more suspicious), clipped to 0-2
+#     and divided by 2 to give 0-1.
 # =============================================================================
 
 import numpy as np
@@ -45,24 +58,51 @@ from constants import (
 
 def _sigmoid_norm(score):
     """
-    Converts a decision_function score (negative = anomalous) to 0-1.
+    For OC-SVM only. OC-SVM decision_function has meaningful unbounded
+    magnitude (e.g. -7.6 = very anomalous, -0.1 = mildly anomalous).
 
     Step 1 — Sigmoid inversion: sigmoid = 1 / (1 + exp(score))
-      - Very negative score (e.g. -3.0) → close to 1.0 (suspicious)
+      - Very negative score (e.g. -7.6) → close to 1.0 (suspicious)
       - Score of 0.0 (decision boundary)  → exactly 0.5
-      - Positive score  (e.g. +1.0)       → close to 0.27 (normal)
+      - Positive score  (e.g. +1.0)       → below 0.5 (normal)
 
     Step 2 — Boundary rescaling: norm = max(0, (sigmoid - 0.5) * 2.0)
-      - Shifts and stretches so that the decision boundary (sigmoid=0.5)
-        maps to 0.0 instead of 0.5. A student with no anomalous behavior
-        (score >= 0) contributes 0 to the CPI rather than 0.5.
-      - Score of 0.0 (boundary) → 0.0  (no contribution)
-      - Score of -1.0           → 0.46 (moderate contribution)
+      - Shifts so the decision boundary (sigmoid=0.5) maps to 0.0.
+      - A student with no anomalous SVM behavior contributes 0 to CPI.
+      - Score of 0.0 (boundary) → 0.0 (no contribution)
       - Score of -3.0           → 0.90 (high contribution)
+      - Score of -7.6           → ~1.0 (maximum contribution)
       - Positive scores         → 0.0  (clamped — normal behavior)
     """
     sigmoid = 1.0 / (1.0 + np.exp(score))
     return float(max(0.0, (sigmoid - 0.5) * 2.0))
+
+
+def _iso_norm(score):
+    """
+    For Isolation Forest (Tab and RT) only.
+
+    Isolation Forest's decision_function is bounded in a narrow range
+    near the decision threshold regardless of how extreme the anomaly is.
+    This is a documented property of the algorithm (Liu et al., 2008) —
+    scores are normalized by average path length and cluster between
+    roughly -0.5 and 0.5.
+
+    Sigmoid normalization suppresses this signal because a score of -0.07
+    and -0.5 both map to near 0.5 on the sigmoid curve, producing nearly
+    identical CPI contributions despite very different anomaly levels.
+
+    Linear mapping from the effective IF range to [0.0, 1.0]:
+      score =  0.0  → 0.0 (on decision boundary — no contribution)
+      score = -0.07 → 0.14 (mild anomaly)
+      score = -0.25 → 0.50 (moderate anomaly)
+      score = -0.5  → 1.0  (maximum anomaly)
+      Positive scores → 0.0 (clamped — normal behavior)
+
+    Ref: Liu, F.T., Ting, K.M., Zhou, Z.H. (2008). Isolation Forest.
+         IEEE International Conference on Data Mining (ICDM).
+    """
+    return float(max(0.0, min(1.0, score / -0.5)))
 
 
 def _hmm_norm(drop):
@@ -106,8 +146,11 @@ def compute_cpi(row):
     svm_raw     = 0.0 if (svm_raw     is None or np.isnan(svm_raw))     else svm_raw
     hmm_raw     = 0.0 if (hmm_raw     is None or np.isnan(hmm_raw))     else hmm_raw
 
-    iso_tab_norm = _sigmoid_norm(iso_tab_raw)
-    rt_norm      = _sigmoid_norm(rt_raw)
+    # IF-Tab and IF-RT use linear mapping (_iso_norm)
+    # OC-SVM uses sigmoid inversion + boundary rescaling (_sigmoid_norm)
+    # HMM uses ratio-based drop normalization (_hmm_norm)
+    iso_tab_norm = _iso_norm(iso_tab_raw)
+    rt_norm      = _iso_norm(rt_raw)
     svm_norm     = _sigmoid_norm(svm_raw)
     hmm_norm     = _hmm_norm(hmm_raw)
 
@@ -136,13 +179,13 @@ def compute_cpi(row):
     else:
         cpi_label  = 'Unlikely'
         is_flagged = False
-    # === INSERT DEBUG PRINT HERE ===
+
     print(f"--- DEBUG CPI CALCULATION ---")
     print(f"Weights: SVM={CPI_WEIGHT_SVM}, TAB={CPI_WEIGHT_ISO_TAB}, RT={CPI_WEIGHT_ISO_RT}, HMM={CPI_WEIGHT_HMM}")
     print(f"Norms:   SVM={svm_norm:.2f}, TAB={iso_tab_norm:.2f}, RT={rt_norm:.2f}, HMM={hmm_norm:.2f}")
     print(f"Final Score: {cpi_score}%")
     print(f"-----------------------------")
-    
+
     return {
         'cpi_raw':     cpi_raw,
         'cpi_score':   cpi_score,
