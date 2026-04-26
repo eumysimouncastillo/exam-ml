@@ -34,14 +34,11 @@ OC_SVM_FEATURES  = ['copy_count', 'paste_count', 'cut_count', 'shortcut_count']
 # Scaler
 SCALER_PATH      = os.path.join(MODELS_DIR, 'scaler.pkl')
 
-# Features normalized by MinMaxScaler.
-# copy_count, paste_count, cut_count, shortcut_count excluded —
-# they are always 0 in normal training data so scaling destroys the signal.
-SCALE_FEATURES = [
-    'tab_switch_count', 'avg_duration_away', 'max_duration_away',
-    'avg_rt', 'min_rt', 'max_rt', 'std_rt',
-    'mean_iki', 'std_iki'
-]
+# No features require MinMaxScaling.
+# IF-Tab and IF-RT are tree-based — do not require normalized input.
+# OC-SVM features (copy/paste counts) are already excluded by design.
+# HMM uses raw _iki_sequence directly.
+SCALE_FEATURES = []
 
 # =============================================================================
 # CPI — Cheating Probability Index

@@ -92,6 +92,9 @@ def _keystroke_features(df):
 
 
 def normalize_features(features_df, is_training=False):
+    if not SCALE_FEATURES:
+        print('[Normalization] No features require scaling — skipped.')
+        return features_df
     """
     Scales only continuous numerical features to 0-1 range.
 
