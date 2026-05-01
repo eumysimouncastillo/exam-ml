@@ -21,11 +21,11 @@ HMM_DIR = os.path.join(MODELS_DIR, 'hmm')
 
 def evaluate_all():
     print('=== Evaluating model accuracy ===')
-    print('Test set: 50 normal students + 50 suspicious students')
+    print('Test set: 1000 normal students + 1000 suspicious students')
     print()
 
     # Generate labeled test data
-    test_df, true_labels = generate_test_data(n_normal=50, n_suspicious=50)
+    test_df, true_labels = generate_test_data(n_normal=1000, n_suspicious=1000, seed=127)
 
     # Normalize using the SAVED scaler (not refitting)
     norm_df = normalize_features(test_df.copy(), is_training=False)

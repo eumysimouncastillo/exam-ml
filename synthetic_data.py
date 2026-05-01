@@ -67,7 +67,7 @@ def generate_training_data(n_students=200, seed=42):
     return df
 
 
-def generate_test_data(n_normal=50, n_suspicious=50, seed=99):
+def generate_test_data(n_normal=1000, n_suspicious=1000, seed=127):
     """
     Generates a labeled test dataset.
     Returns: (features_df, true_labels)
